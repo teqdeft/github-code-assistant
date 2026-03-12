@@ -128,6 +128,18 @@ ENV/
 env.bak/
 venv.bak/
 
+
+.env
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+chroma_db/
+/tmp/
+*.egg-info/
+.DS_Store
+
 # Spyder project settings
 .spyderproject
 .spyproject

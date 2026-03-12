@@ -1,107 +1,65 @@
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import StreamingResponse
-from database import get_db
-from models import ChatMessage, ChatMessageResponse
-from auth_utils import get_current_user
-from services.rag_service import answer_question
 from datetime import datetime
 from bson import ObjectId
 from typing import List
+from database import get_db
+from models import ChatMessage, ChatMessageResponse
+from auth_utils import get_current_user
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 @router.post("/ask", response_model=ChatMessageResponse)
-async def ask_question(data: ChatMessage, current_user=Depends(get_current_user)):
+async def ask(data: ChatMessage, u=Depends(get_current_user)):
+    # ← Import INSIDE the function so it never runs at module load time
+    from services.rag_service import answer_question
+
     db = get_db()
-    user_id = str(current_user["_id"])
-
-    # Verify repo belongs to user and is ready
-    repo = await db.repos.find_one({"_id": ObjectId(data.repo_id), "user_id": user_id})
+    uid = str(u["_id"])
+    repo = await db.repos.find_one({"_id": ObjectId(data.repo_id), "user_id": uid})
     if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+        raise HTTPException(404, "Repository not found")
     if repo["status"] == "indexing":
-        raise HTTPException(status_code=400, detail="Repository is still being indexed. Please wait.")
+        raise HTTPException(400, "Repository is still being indexed, please wait")
     if repo["status"] == "error":
-        raise HTTPException(status_code=400, detail=f"Repository indexing failed: {repo.get('error', 'Unknown error')}")
+        raise HTTPException(400, f"Indexing failed: {repo.get('error', 'unknown error')}")
 
-    # Get recent chat history for context
-    recent_chats = await db.chats.find(
-        {"user_id": user_id, "repo_id": data.repo_id}
-    ).sort("created_at", -1).limit(5).to_list(5)
-    chat_history = [
-        {"role": "user", "content": c["question"]}
-        for c in reversed(recent_chats)
-    ]
-
-    # Generate answer
     try:
-        answer, sources = await answer_question(
-            question=data.question,
-            repo_id=data.repo_id,
-            repo_url=repo["repo_url"],
-            chat_history=chat_history,
-        )
+        answer, sources = await answer_question(data.question, data.repo_id, repo["repo_url"])
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate answer: {str(e)}")
+        raise HTTPException(500, f"Failed to generate answer: {str(e)}")
 
-    # Save to MongoDB
-    chat_doc = {
-        "user_id": user_id,
-        "repo_id": data.repo_id,
-        "question": data.question,
-        "answer": answer,
-        "sources": sources,
-        "created_at": datetime.utcnow(),
+    doc = {
+        "user_id": uid, "repo_id": data.repo_id,
+        "question": data.question, "answer": answer,
+        "sources": sources, "created_at": datetime.utcnow(),
     }
-    result = await db.chats.insert_one(chat_doc)
-
-    return ChatMessageResponse(
-        id=str(result.inserted_id),
-        user_id=user_id,
-        repo_id=data.repo_id,
-        question=data.question,
-        answer=answer,
-        sources=sources,
-        created_at=chat_doc["created_at"],
-    )
+    res = await db.chats.insert_one(doc)
+    return ChatMessageResponse(id=str(res.inserted_id), **{k: v for k, v in doc.items()})
 
 
 @router.get("/history/{repo_id}", response_model=List[ChatMessageResponse])
-async def get_chat_history(
-    repo_id: str,
-    limit: int = 50,
-    current_user=Depends(get_current_user),
-):
+async def history(repo_id: str, limit: int = 50, u=Depends(get_current_user)):
     db = get_db()
-    user_id = str(current_user["_id"])
-
-    # Verify repo access
-    repo = await db.repos.find_one({"_id": ObjectId(repo_id), "user_id": user_id})
+    uid = str(u["_id"])
+    repo = await db.repos.find_one({"_id": ObjectId(repo_id), "user_id": uid})
     if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
-
-    chats = await db.chats.find(
-        {"user_id": user_id, "repo_id": repo_id}
+        raise HTTPException(404, "Repository not found")
+    docs = await db.chats.find(
+        {"user_id": uid, "repo_id": repo_id}
     ).sort("created_at", 1).limit(limit).to_list(limit)
-
     return [
         ChatMessageResponse(
-            id=str(c["_id"]),
-            user_id=c["user_id"],
-            repo_id=c["repo_id"],
-            question=c["question"],
-            answer=c["answer"],
-            sources=c.get("sources", []),
-            created_at=c["created_at"],
+            id=str(d["_id"]), user_id=d["user_id"], repo_id=d["repo_id"],
+            question=d["question"], answer=d["answer"],
+            sources=d.get("sources", []), created_at=d["created_at"],
         )
-        for c in chats
+        for d in docs
     ]
 
 
 @router.delete("/history/{repo_id}")
-async def clear_chat_history(repo_id: str, current_user=Depends(get_current_user)):
+async def clear(repo_id: str, u=Depends(get_current_user)):
     db = get_db()
-    user_id = str(current_user["_id"])
-    await db.chats.delete_many({"user_id": user_id, "repo_id": repo_id})
-    return {"message": "Chat history cleared"}
+    await db.chats.delete_many({"user_id": str(u["_id"]), "repo_id": repo_id})
+    return {"message": "Cleared"}

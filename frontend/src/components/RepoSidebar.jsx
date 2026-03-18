@@ -193,7 +193,7 @@ export default function RepoSidebar({ repos, selectedRepo, onSelect, onReposChan
                 )}
 
                 {repo.status === 'error' && (
-                  <p className="text-xs mt-1 truncate" style={{ color: '#dc2626' }}>{repo.error}</p>
+                  <p className="text-xs mt-1 truncate" style={{ color: '#dc2626' }}>Try again later</p>
                 )}
               </button>
             ))

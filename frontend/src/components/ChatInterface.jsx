@@ -360,7 +360,7 @@ export default function ChatInterface({ repo }) {
       <div className="text-center max-w-sm">
         <div className="text-3xl mb-3">⚠️</div>
         <h3 className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Indexing Failed</h3>
-        <p className="text-sm" style={{ color: '#dc2626' }}>{repo.error || 'Unknown error'}</p>
+        {/* <p className="text-sm" style={{ color: '#dc2626' }}>{repo.error || 'Unknown error'}</p> */}
       </div>
     </div>
   )

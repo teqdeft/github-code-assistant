@@ -13,7 +13,7 @@ _llm = None
 def get_llm():
     global _llm
     if _llm is None:
-        _llm = init_chat_model("llama-3.3-70b-versatile", model_provider="groq")
+        _llm = init_chat_model("llama-3.3-70b-versatile", model_provider="groq", max_tokens=1024)
     return _llm
 
 
